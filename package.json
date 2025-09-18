@@ -1,0 +1,49 @@
+{
+  "name": "neuralflow-backend",
+  "version": "1.0.0",
+  "description": "NeuralFlow (AI-powered task and workflow automation) backend with Firebase Auth, MongoDB, Socket.IO, and Google Gemini",
+  "type": "commonjs",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "worker": "node src/workers/ai-worker.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "keywords": [
+    "ai",
+    "task-management",
+    "workflow",
+    "firebase",
+    "mongodb",
+    "socket.io",
+    "gemini"
+  ],
+  "author": "Ammar Alhmoud",
+  "license": "MIT",
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "bullmq": "^5.7.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.5.0",
+    "helmet": "^7.1.0",
+    "http-status-codes": "^2.3.0",
+    "mongoose": "^8.5.3",
+    "morgan": "^1.10.0",
+    "redis": "^4.6.13",
+    "socket.io": "^4.7.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "eslint": "^9.10.0",
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  }
+}
