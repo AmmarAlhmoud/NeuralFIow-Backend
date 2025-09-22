@@ -1,43 +1,70 @@
+const admin = require("firebase-admin");
 const { verifyIdToken } = require("../lib/firebase");
 const User = require("../models/User");
 
 async function firebaseAuthMiddleware(req, res, next) {
   try {
-    const authHeader = req.headers.authorization;
+    let token = req.cookies?.token;
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({
-        message: "No authentication token provided",
-      });
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        token = authHeader.split(" ")[1];
+      }
     }
 
-    const token = authHeader.split(" ")[1];
-    const decoded = await verifyIdToken(token);
+    if (!token) {
+      return res
+        .status(401)
+        .json({ message: "No authentication token provided" });
+    }
 
-    let user = await User.findOne({ uid: decoded.uid });
+    // Verify token with Firebase
+    const decoded = await verifyIdToken(token);
+    const userData = await admin.auth().getUser(decoded.uid);
+
+    let user = await User.findOne({ uid: userData.uid });
     if (!user) {
       user = await User.create({
-        uid: decoded.uid,
-        email: decoded.email,
-        name: decoded.name,
-        avatarUrl: decoded.picture,
+        uid: userData.uid,
+        email: userData.email,
+        name: userData.displayName,
+        avatarURL: userData.photoURL,
       });
     }
 
-    req.user = decoded;
+    if (!req.cookies?.token) {
+      const cookieOptions = {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "Strict",
+        overwrite: true,
+      };
+      res.cookie("token", token, cookieOptions);
+    }
+
+    // Attach user info to request
+    req.user = userData;
     req.dbUser = user;
+
     next();
   } catch (error) {
     console.error("🔐 Authentication error:", error);
-    return res.status(401).json({
-      message: "Invalid authentication token",
-    });
+    return res.status(401).json({ message: "Invalid authentication token" });
   }
 }
 
 async function decodeSocketAuth(socket, next) {
   try {
-    const token = socket.handshake.auth?.token;
+    let token = socket.handshake.headers.cookie
+      ?.split(";")
+      .map((c) => c.trim())
+      .find((c) => c.startsWith("token="))
+      ?.split("=")[1];
+
+    if (!token) {
+      token = socket.handshake.auth?.token;
+    }
 
     if (!token) {
       return next(new Error("No authentication token provided"));
@@ -45,7 +72,6 @@ async function decodeSocketAuth(socket, next) {
 
     const decoded = await verifyIdToken(token);
     socket.user = decoded;
-
     next();
   } catch (error) {
     console.error("🔐 Socket authentication error:", error);

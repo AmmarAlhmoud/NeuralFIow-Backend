@@ -13,7 +13,7 @@ const UserSchema = new Schema(
       required: true,
     },
     name: String,
-    avatarUrl: String,
+    avatarURL: String,
   },
   { timestamps: true }
 );

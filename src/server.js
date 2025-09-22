@@ -4,6 +4,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const http = require("http");
+const cookieParser = require("cookie-parser");
 const { Server } = require("socket.io");
 const { connectDB } = require("./lib/db");
 const routes = require("./routes");
@@ -21,6 +22,7 @@ app.use(
   })
 );
 app.use(express.json({ limit: "2mb" }));
+app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
 

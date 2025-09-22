@@ -5,18 +5,9 @@ const { firebaseAuthMiddleware } = require("../middleware/auth");
 
 router.get("/me", firebaseAuthMiddleware, async (req, res) => {
   try {
-    const { uid, email, name, picture } = req.user;
+    const { uid } = req.user;
 
     let user = await User.findOne({ uid });
-
-    if (!user) {
-      user = await User.create({
-        uid,
-        email,
-        name,
-        avatarUrl: picture,
-      });
-    }
 
     res.json({
       success: true,
