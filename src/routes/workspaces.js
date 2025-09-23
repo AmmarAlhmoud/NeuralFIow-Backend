@@ -60,7 +60,7 @@ router.get("/", async (req, res) => {
       .populate("ownerId", "name email avatarUrl")
       .sort({ createdAt: -1 });
 
-    res.json({
+    res.status(200).json({
       success: true,
       data: workspaces,
     });

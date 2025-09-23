@@ -7,3 +7,5 @@ build/
 coverage/
 .DS_Store
 .eslintcache
+localhost-key.pem
+localhost.pem

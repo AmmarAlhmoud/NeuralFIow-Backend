@@ -1,9 +1,10 @@
 require("dotenv").config();
+const fs = require("fs");
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
-const http = require("http");
+const https = require("https");
 const cookieParser = require("cookie-parser");
 const { Server } = require("socket.io");
 const { connectDB } = require("./lib/db");
@@ -35,8 +36,11 @@ app.get("/health", (_req, res) => {
   });
 });
 
-// Create HTTP server + Socket.IO
-const server = http.createServer(app);
+// Create HTTPs server + Socket.IO
+const key = fs.readFileSync("localhost-key.pem");
+const cert = fs.readFileSync("localhost.pem");
+
+const server = https.createServer({ key, cert }, app);
 const io = new Server(server, {
   cors: {
     origin: process.env.CORS_ORIGIN || "http://localhost:5173",

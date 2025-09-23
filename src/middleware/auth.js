@@ -14,9 +14,7 @@ async function firebaseAuthMiddleware(req, res, next) {
     }
 
     if (!token) {
-      return res
-        .status(401)
-        .json({ message: "No authentication token provided" });
+      return res.status(401).json({ message: "Unauthorized" });
     }
 
     // Verify token with Firebase
@@ -36,9 +34,8 @@ async function firebaseAuthMiddleware(req, res, next) {
     if (!req.cookies?.token) {
       const cookieOptions = {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "Strict",
-        overwrite: true,
+        secure: true,
+        sameSite: process.env.NODE_ENV === "production" ? "Lax" : "None",
       };
       res.cookie("token", token, cookieOptions);
     }
