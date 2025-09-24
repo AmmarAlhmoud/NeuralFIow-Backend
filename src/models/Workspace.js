@@ -12,6 +12,10 @@ const WorkspaceSchema = new Schema(
       ref: "User",
       required: true,
     },
+    color: {
+      type: String,
+      default: "#7f22fe",
+    },
     members: [
       {
         uid: {

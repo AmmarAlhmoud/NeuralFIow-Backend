@@ -9,28 +9,20 @@ const createWorkspaceSchema = z.object({
   body: z.object({
     name: z.string().min(1).max(100),
     description: z.string().max(500).optional(),
+    color: z.string().optional(),
   }),
 });
 
 router.post("/", validate(createWorkspaceSchema), async (req, res) => {
   try {
     const { uid } = req.user;
-    const { name, description } = req.validated.body;
-
-    let user = await User.findOne({ uid });
-    if (!user) {
-      user = await User.create({
-        uid,
-        email: req.user.email,
-        name: req.user.name,
-        avatarUrl: req.user.picture,
-      });
-    }
+    const { name, description, color } = req.validated.body;
 
     const workspace = await Workspace.create({
       name,
       description,
-      ownerId: user._id,
+      ownerId: req.dbUser._id,
+      color,
       members: [
         {
           uid,
