@@ -8,12 +8,6 @@ const TaskSchema = new Schema(
       required: true,
       index: true,
     },
-    listId: {
-      type: Schema.Types.ObjectId,
-      ref: "List",
-      required: true,
-      index: true,
-    },
     title: {
       type: String,
       required: true,
@@ -32,12 +26,12 @@ const TaskSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ["todo", "in_progress", "blocked", "review", "done"],
+      enum: ["todo", "in_progress", "done"],
       default: "todo",
     },
     dueDate: Date,
     estimate: Number,
-    labels: [String],
+    tags: [String],
     attachments: [
       {
         url: String,

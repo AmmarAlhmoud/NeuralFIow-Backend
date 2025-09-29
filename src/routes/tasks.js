@@ -1,7 +1,6 @@
 const express = require("express");
 const router = express.Router();
 const Task = require("../models/Task");
-const User = require("../models/User");
 const { requireWorkspaceRole } = require("../middleware/rbac");
 const { validate, z, commonSchemas } = require("../middleware/validate");
 const { aiQueue } = require("../queues/ai-queue");
@@ -9,13 +8,12 @@ const { aiQueue } = require("../queues/ai-queue");
 const createTaskSchema = z.object({
   body: z.object({
     projectId: commonSchemas.mongoId,
-    listId: commonSchemas.mongoId,
     title: z.string().min(1).max(200),
     description: z.string().max(2000).optional(),
     priority: commonSchemas.priority.optional(),
-    dueDate: z.string().datetime().optional(),
+    dueDate: z.string().optional(),
     estimate: z.number().positive().optional(),
-    labels: z.array(z.string()).optional(),
+    tags: z.array(z.string()).optional(),
     assignees: z.array(commonSchemas.mongoId).optional(),
   }),
 });
@@ -23,17 +21,14 @@ const createTaskSchema = z.object({
 router.post(
   "/",
   validate(createTaskSchema),
-  requireWorkspaceRole("member"),
+  requireWorkspaceRole("manager"),
   async (req, res) => {
     try {
       const taskData = req.validated.body;
-      const userUid = req.user.uid;
-
-      const user = await User.findOne({ uid: userUid });
 
       const task = await Task.create({
         ...taskData,
-        createdBy: user._id,
+        createdBy: req.dbUser._id,
         dueDate: taskData.dueDate ? new Date(taskData.dueDate) : undefined,
       });
 
@@ -102,7 +97,7 @@ const updateTaskSchema = z.object({
 router.patch(
   "/:id",
   validate(updateTaskSchema),
-  requireWorkspaceRole("member"),
+  requireWorkspaceRole("manager"),
   async (req, res) => {
     try {
       const updates = req.validated.body;

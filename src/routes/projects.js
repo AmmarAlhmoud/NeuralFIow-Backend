@@ -1,9 +1,38 @@
 const express = require("express");
+const crypto = require("crypto");
 const router = express.Router();
 const Project = require("../models/Project");
 const User = require("../models/User");
 const { requireWorkspaceRole } = require("../middleware/rbac");
 const { validate, z, commonSchemas } = require("../middleware/validate");
+
+const generateProjectKey = async (name, workspaceId) => {
+  let baseKey = name
+    .replace(/[^a-zA-Z]/g, "")
+    .substring(0, 4)
+    .toUpperCase();
+  if (!baseKey) baseKey = "PRJ";
+
+  // generate a short random suffix
+  const randomSuffix = () =>
+    crypto.randomBytes(2).toString("hex").toUpperCase();
+
+  let key = `${baseKey}${randomSuffix()}`;
+  let attempt = 0;
+
+  // ensure uniqueness in workspace
+  while (await Project.exists({ workspaceId, key })) {
+    key = `${baseKey}${randomSuffix()}`;
+    attempt++;
+    if (attempt > 10) {
+      // fallback using timestamp in rare case of multiple collisions
+      key = `${baseKey}${Date.now().toString().slice(-4)}`;
+      break;
+    }
+  }
+
+  return key;
+};
 
 const createProjectSchema = z.object({
   body: z.object({
@@ -13,7 +42,8 @@ const createProjectSchema = z.object({
       .string()
       .min(2)
       .max(10)
-      .transform((val) => val.toUpperCase()),
+      .transform((val) => val.toUpperCase())
+      .optional(),
     description: z.string().max(500).optional(),
   }),
 });
@@ -24,22 +54,30 @@ router.post(
   requireWorkspaceRole("manager"),
   async (req, res) => {
     try {
-      const { workspaceId, name, key, description } = req.validated.body;
-      const userUid = req.user.uid;
+      const {
+        workspaceId,
+        name,
+        key: providedKey,
+        description,
+      } = req.validated.body;
 
-      const user = await User.findOne({ uid: userUid });
+      // Ensure key is unique (use provided or generate)
+      let key = providedKey;
+      if (!key || (await Project.exists({ workspaceId, key }))) {
+        key = await generateProjectKey(name, workspaceId);
+      }
 
       const project = await Project.create({
         workspaceId,
         name,
         key,
         description,
-        createdBy: user._id,
+        createdBy: req.dbUser._id,
       });
 
       req.io.to(`workspace:${workspaceId}`).emit("project:created", {
         project,
-        createdBy: user,
+        createdBy: req.dbUser,
       });
 
       res.status(201).json({
