@@ -41,13 +41,16 @@ const TaskSchema = new Schema(
       },
     ],
     ai: {
-      summary: String,
-      suggestedSubtasks: [String],
-      suggestedPriority: {
-        type: String,
-        enum: ["low", "medium", "high", "critical"],
+      type: {
+        summary: String,
+        suggestedSubtasks: [String],
+        suggestedPriority: {
+          type: String,
+          enum: ["low", "medium", "high", "critical"],
+        },
+        lastProcessed: Date,
       },
-      lastProcessed: Date,
+      required: false,
     },
     createdBy: {
       type: Schema.Types.ObjectId,
