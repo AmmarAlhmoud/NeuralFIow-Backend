@@ -11,6 +11,8 @@ const createTaskSchema = z.object({
     title: z.string().min(1).max(200),
     description: z.string().max(2000).optional(),
     priority: commonSchemas.priority.optional(),
+    status: commonSchemas.status.optional(),
+    order: z.number().min(1).max(6).optional(),
     dueDate: z.string().optional(),
     estimate: z.number().positive().optional(),
     tags: z.array(z.string()).optional(),
@@ -26,8 +28,23 @@ router.post(
     try {
       const taskData = req.validated.body;
 
+      // Default to 6 (last)
+      let taskOrder = taskData.order ?? 6;
+
+      if (taskOrder !== 6) {
+        // Shift tasks at or after this order, but before "last"
+        await Task.updateMany(
+          {
+            status: taskData.status,
+            order: { $gte: taskOrder, $lt: 6 },
+          },
+          { $inc: { order: 1 } }
+        );
+      }
+
       const task = await Task.create({
         ...taskData,
+        order: taskOrder,
         createdBy: req.dbUser._id,
         dueDate: taskData.dueDate ? new Date(taskData.dueDate) : undefined,
       });
@@ -87,10 +104,17 @@ const updateTaskSchema = z.object({
     description: z.string().max(2000).optional(),
     priority: commonSchemas.priority.optional(),
     status: commonSchemas.status.optional(),
-    dueDate: z.string().datetime().optional(),
+    dueDate: z.string().optional(),
     estimate: z.number().positive().optional(),
+    order: z.number().min(1).max(6).optional(),
     labels: z.array(z.string()).optional(),
     assignees: z.array(commonSchemas.mongoId).optional(),
+  }),
+});
+
+const deleteTaskSchema = z.object({
+  params: z.object({
+    id: commonSchemas.mongoId,
   }),
 });
 
@@ -101,16 +125,100 @@ router.patch(
   async (req, res) => {
     try {
       const updates = req.validated.body;
+
       if (updates.dueDate) {
         updates.dueDate = new Date(updates.dueDate);
       }
 
-      const task = await Task.findByIdAndUpdate(req.params.id, updates, {
+      // Get the current task first
+      const task = await Task.findById(req.params.id);
+      if (!task) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+
+      const oldOrder = task.order;
+      const newOrder = updates.order;
+
+      if (newOrder !== undefined && newOrder !== oldOrder) {
+        const status = updates.status ?? task.status;
+
+        if (newOrder === 6) {
+          // Moving to last decrement orders above oldOrder
+          await Task.updateMany(
+            {
+              status,
+              order: { $gt: oldOrder, $lt: 6 },
+              _id: { $ne: task._id },
+            },
+            { $inc: { order: -1 } }
+          );
+        } else if (oldOrder === 6) {
+          // Moving from last increment orders >= newOrder
+          await Task.updateMany(
+            {
+              status,
+              order: { $gte: newOrder, $lt: 6 },
+              _id: { $ne: task._id },
+            },
+            { $inc: { order: 1 } }
+          );
+        } else if (newOrder > oldOrder) {
+          // Moving down
+          await Task.updateMany(
+            {
+              status,
+              order: { $gt: oldOrder, $lt: newOrder },
+              _id: { $ne: task._id },
+            },
+            { $inc: { order: -1 } }
+          );
+        } else {
+          // Moving up
+          await Task.updateMany(
+            {
+              status,
+              order: { $gte: newOrder, $lt: oldOrder },
+              _id: { $ne: task._id },
+            },
+            { $inc: { order: 1 } }
+          );
+        }
+      }
+
+      const updatedTask = await Task.findByIdAndUpdate(req.params.id, updates, {
         new: true,
         runValidators: true,
       })
         .populate("createdBy", "name email avatarUrl")
         .populate("assignees", "name email avatarUrl");
+
+      req.io.to(`project:${task.projectId}`).emit("task:updated", {
+        task: updatedTask,
+        changes: updates,
+      });
+
+      res.status(200).json({
+        success: true,
+        data: updatedTask,
+      });
+    } catch (error) {
+      console.error("📝 Update task error:", error);
+      res.status(500).json({
+        message: "Failed to update task",
+      });
+    }
+  }
+);
+
+router.delete(
+  "/:id",
+  validate(deleteTaskSchema),
+  requireWorkspaceRole("manager"),
+  async (req, res) => {
+    try {
+      const taskId = req.validated.params.id;
+
+      const task = await Task.findByIdAndDelete({ _id: taskId });
 
       if (!task) {
         return res.status(404).json({
@@ -118,19 +226,18 @@ router.patch(
         });
       }
 
-      req.io.to(`project:${task.projectId}`).emit("task:updated", {
+      req.io.to(`project:${task.projectId}`).emit("task:deleted", {
         task,
-        changes: updates,
       });
 
-      res.json({
+      res.status(204).json({
         success: true,
-        data: task,
+        data: null,
       });
     } catch (error) {
-      console.error("📝 Update task error:", error);
+      console.error("📝 Delete task error:", error);
       res.status(500).json({
-        message: "Failed to update task",
+        message: "Failed to delete task",
       });
     }
   }

@@ -34,7 +34,7 @@ const commonSchemas = {
   mongoId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid MongoDB ObjectId"),
   email: z.string().email("Invalid email format"),
   priority: z.enum(["low", "medium", "high", "critical"]),
-  status: z.enum(["todo", "in_progress", "blocked", "review", "done"]),
+  status: z.enum(["todo", "in_progress", "done"]),
   role: z.enum(["viewer", "member", "manager", "admin"]),
 };
 

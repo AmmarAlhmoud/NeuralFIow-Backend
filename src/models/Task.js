@@ -59,7 +59,9 @@ const TaskSchema = new Schema(
     },
     order: {
       type: Number,
-      default: 0,
+      default: 6,
+      min: 1,
+      max: 6,
     },
   },
   { timestamps: true }
