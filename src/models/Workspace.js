@@ -19,7 +19,8 @@ const WorkspaceSchema = new Schema(
     members: [
       {
         uid: {
-          type: String,
+          type: Schema.Types.ObjectId,
+          ref: "User",
           required: true,
         },
         role: {

@@ -22,7 +22,7 @@ function requireWorkspaceRole(minRole) {
         });
       }
 
-      const userUid = req.user.uid;
+      const { _id } = req.dbUser;
 
       const workspace = await Workspace.findById(workspaceId).lean();
       if (!workspace) {
@@ -31,7 +31,9 @@ function requireWorkspaceRole(minRole) {
         });
       }
 
-      const membership = workspace.members.find((m) => m.uid === userUid);
+      const membership = workspace.members.find(
+        (m) => m.uid.toString() === _id.toString()
+      );
       if (!membership) {
         return res.status(403).json({
           message: "You are not a member of this workspace",

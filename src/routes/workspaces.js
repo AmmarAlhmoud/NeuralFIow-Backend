@@ -4,6 +4,7 @@ const Workspace = require("../models/Workspace");
 const User = require("../models/User");
 const { requireWorkspaceRole } = require("../middleware/rbac");
 const { validate, z, commonSchemas } = require("../middleware/validate");
+const { positive } = require("zod/v4-mini");
 
 const createWorkspaceSchema = z.object({
   body: z.object({
@@ -15,17 +16,17 @@ const createWorkspaceSchema = z.object({
 
 router.post("/", validate(createWorkspaceSchema), async (req, res) => {
   try {
-    const { uid } = req.user;
+    const { _id } = req.dbUser;
     const { name, description, color } = req.validated.body;
 
     const workspace = await Workspace.create({
       name,
       description,
-      ownerId: req.dbUser._id,
+      ownerId: _id,
       color,
       members: [
         {
-          uid,
+          uid: _id,
           role: "admin",
           joinedAt: new Date(),
         },
@@ -46,10 +47,10 @@ router.post("/", validate(createWorkspaceSchema), async (req, res) => {
 
 router.get("/", async (req, res) => {
   try {
-    const { uid } = req.user;
+    const { _id } = req.dbUser;
 
-    const workspaces = await Workspace.find({ "members.uid": uid })
-      .populate("ownerId", "name email avatarUrl")
+    const workspaces = await Workspace.find({ "members.uid": _id })
+      .populate("ownerId", "name email avatarURL")
       .sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -64,9 +65,46 @@ router.get("/", async (req, res) => {
   }
 });
 
+const getWorkspaceSchema = z.object({
+  params: z.object({
+    workspaceId: commonSchemas.mongoId,
+  }),
+});
+
+router.get(
+  "/:workspaceId",
+  validate(getWorkspaceSchema),
+  requireWorkspaceRole("admin"),
+  async (req, res) => {
+    try {
+      const { _id } = req.dbUser;
+
+      const id = req.validated.params.workspaceId;
+
+      const workspace = await Workspace.findOne({
+        _id: id,
+        "members.uid": _id,
+      })
+        .populate("members.uid", "name email avatarURL position")
+        .populate("ownerId", "name email avatarURL")
+        .sort({ createdAt: -1 });
+
+      res.status(200).json({
+        success: true,
+        data: workspace,
+      });
+    } catch (error) {
+      console.error("🏢 List workspace error:", error);
+      res.status(500).json({
+        message: "Failed to fetch workspace",
+      });
+    }
+  }
+);
+
 const addMemberSchema = z.object({
   params: z.object({
-    id: commonSchemas.mongoId,
+    workspaceId: commonSchemas.mongoId,
   }),
   body: z.object({
     email: commonSchemas.email,
@@ -75,13 +113,13 @@ const addMemberSchema = z.object({
 });
 
 router.post(
-  "/:id/members",
+  "/:workspaceId/members",
   validate(addMemberSchema),
   requireWorkspaceRole("manager"),
   async (req, res) => {
     try {
       const { email, role } = req.validated.body;
-      const workspaceId = req.params.id;
+      const workspaceId = req.validated.params.workspaceId;
 
       const user = await User.findOne({ email });
       if (!user) {
@@ -91,7 +129,9 @@ router.post(
       }
 
       const workspace = await Workspace.findById(workspaceId);
-      const existingMember = workspace.members.find((m) => m.uid === user.uid);
+      const existingMember = workspace.members.find(
+        (m) => m.uid.toString() === user._id.toString()
+      );
 
       if (existingMember) {
         return res.status(400).json({
@@ -102,6 +142,7 @@ router.post(
       workspace.members.push({
         uid: user.uid,
         role,
+        position: user.position,
         joinedAt: new Date(),
       });
 
@@ -114,7 +155,7 @@ router.post(
 
       res.status(201).json({
         success: true,
-        data: { member: { uid: user.uid, role, user } },
+        data: { member: { uid: user.uid, role, position: user.position } },
       });
     } catch (error) {
       console.error("🏢 Add member error:", error);

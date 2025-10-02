@@ -14,6 +14,10 @@ const UserSchema = new Schema(
     },
     name: String,
     avatarURL: String,
+    position: {
+      type: String,
+      default: "Not set",
+    },
   },
   { timestamps: true }
 );

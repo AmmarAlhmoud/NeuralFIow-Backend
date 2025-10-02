@@ -183,6 +183,12 @@ router.patch(
             { $inc: { order: 1 } }
           );
         }
+        req.io.to(`project:${task.projectId}`).emit("task:moved", {
+          taskId: task._id,
+          oldOrder,
+          newOrder,
+          status,
+        });
       }
 
       const updatedTask = await Task.findByIdAndUpdate(req.params.id, updates, {
@@ -213,7 +219,7 @@ router.patch(
 router.delete(
   "/:id",
   validate(deleteTaskSchema),
-  requireWorkspaceRole("manager"),
+  requireWorkspaceRole("member"),
   async (req, res) => {
     try {
       const taskId = req.validated.params.id;
@@ -242,43 +248,6 @@ router.delete(
     }
   }
 );
-
-router.patch("/:id/move", requireWorkspaceRole("member"), async (req, res) => {
-  try {
-    const { listId, order } = req.body;
-
-    const task = await Task.findByIdAndUpdate(
-      req.params.id,
-      {
-        listId,
-        ...(order !== undefined && { order }),
-      },
-      { new: true }
-    );
-
-    if (!task) {
-      return res.status(404).json({
-        message: "Task not found",
-      });
-    }
-
-    req.io.to(`project:${task.projectId}`).emit("task:moved", {
-      taskId: task._id,
-      listId,
-      order,
-    });
-
-    res.json({
-      success: true,
-      data: task,
-    });
-  } catch (error) {
-    console.error("📝 Move task error:", error);
-    res.status(500).json({
-      message: "Failed to move task",
-    });
-  }
-});
 
 // AI endpoints
 router.post(
