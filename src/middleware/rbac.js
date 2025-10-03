@@ -24,7 +24,7 @@ function requireWorkspaceRole(minRole) {
 
       const { _id } = req.dbUser;
 
-      const workspace = await Workspace.findById(workspaceId).lean();
+      const workspace = await Workspace.findById(workspaceId);
       if (!workspace) {
         return res.status(404).json({
           message: "Workspace not found",

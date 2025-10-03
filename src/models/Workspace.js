@@ -35,8 +35,9 @@ const WorkspaceSchema = new Schema(
       },
     ],
     settings: {
+      timezone: { type: String, default: "Europe/Istanbul" },
       allowInvites: { type: Boolean, default: true },
-      isPublic: { type: Boolean, default: false },
+      aiModel: { type: String, default: "Gemini" },
     },
   },
   { timestamps: true }
