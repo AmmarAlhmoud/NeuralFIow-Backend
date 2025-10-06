@@ -4,13 +4,30 @@ const Workspace = require("../models/Workspace");
 const User = require("../models/User");
 const { requireWorkspaceRole } = require("../middleware/rbac");
 const { validate, z, commonSchemas } = require("../middleware/validate");
-const { positive } = require("zod/v4-mini");
 
 const createWorkspaceSchema = z.object({
   body: z.object({
     name: z.string().min(1).max(100),
     description: z.string().max(500).optional(),
     color: z.string().optional(),
+  }),
+});
+
+const updateWorkspaceSettingsSchema = z.object({
+  body: z.object({
+    name: z.string().min(1).max(100),
+    timezone: z.string().optional(),
+    aiModel: z.string().optional(),
+    allowInvites: z.boolean().optional(),
+  }),
+  params: z.object({
+    workspaceId: commonSchemas.mongoId,
+  }),
+});
+
+const deleteWorkspaceSchema = z.object({
+  params: z.object({
+    workspaceId: commonSchemas.mongoId,
   }),
 });
 
@@ -65,6 +82,63 @@ router.get("/", async (req, res) => {
   }
 });
 
+router.patch(
+  "/:workspaceId",
+  validate(updateWorkspaceSettingsSchema),
+  requireWorkspaceRole("admin"),
+  async (req, res) => {
+    try {
+      const { workspaceId } = req.validated.params;
+      const { name, timezone, aiModel, allowInvites } = req.validated.body;
+
+      const workspace = await Workspace.findOneAndUpdate(
+        { _id: workspaceId },
+        {
+          name,
+          settings: {
+            aiModel,
+            timezone,
+            allowInvites,
+          },
+        }
+      );
+
+      res.status(200).json({
+        success: true,
+        data: workspace,
+      });
+    } catch (error) {
+      console.error("🏢 update workspace settings error:", error);
+      res.status(500).json({
+        message: "Failed to update workspace settings",
+      });
+    }
+  }
+);
+
+router.delete(
+  "/:workspaceId",
+  validate(deleteWorkspaceSchema),
+  requireWorkspaceRole("admin"),
+  async (req, res) => {
+    try {
+      const { workspaceId } = req.validated.params;
+
+      await Workspace.findByIdAndDelete({ _id: workspaceId });
+
+      res.status(204).json({
+        success: true,
+        data: null,
+      });
+    } catch (error) {
+      console.error("🏢 delete workspace error:", error);
+      res.status(500).json({
+        message: "Failed to delete workspace",
+      });
+    }
+  }
+);
+
 const getWorkspaceSchema = z.object({
   params: z.object({
     workspaceId: commonSchemas.mongoId,
@@ -85,7 +159,7 @@ router.get(
         _id: id,
         "members.uid": _id,
       })
-        .populate("members.uid", "uid name email avatarURL position")
+        .populate("members.uid", "_id uid name email avatarURL position")
         .populate("ownerId", "name email avatarURL position")
         .sort({ createdAt: -1 });
 
@@ -118,6 +192,13 @@ const updateMemberSchema = z.object({
     email: commonSchemas.email.optional(),
     role: commonSchemas.role.optional(),
   }),
+  params: z.object({
+    workspaceId: commonSchemas.mongoId,
+    memberId: commonSchemas.mongoId,
+  }),
+});
+
+const deleteMemberSchema = z.object({
   params: z.object({
     workspaceId: commonSchemas.mongoId,
     memberId: commonSchemas.mongoId,
@@ -160,14 +241,14 @@ router.post(
 
       await workspace.save();
 
-      req.io.to(`user:${user.uid}`).emit("workspace:invited", {
+      req.io.to(`user:${user._id}`).emit("workspace:invited", {
         workspace: { _id: workspace._id, name: workspace.name },
         role,
       });
 
       res.status(201).json({
         success: true,
-        data: { member: { uid: user.uid, role, position: user.position } },
+        data: { member: { uid: user._id, role, position: user.position } },
       });
     } catch (error) {
       console.error("🏢 Add member error:", error);
@@ -291,10 +372,11 @@ router.patch(
 
 router.delete(
   "/:workspaceId/members/:memberId",
+  validate(deleteMemberSchema),
   requireWorkspaceRole("admin"),
   async (req, res) => {
     try {
-      const { workspaceId, memberId } = req.params;
+      const { memberId } = req.validated.params;
 
       const workspace = req.workspace;
       const actingMembership = req.membership;

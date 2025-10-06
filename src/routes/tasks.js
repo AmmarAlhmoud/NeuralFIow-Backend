@@ -248,7 +248,6 @@ router.delete(
     }
   }
 );
-
 // AI endpoints
 router.post(
   "/:id/ai/summarize",
