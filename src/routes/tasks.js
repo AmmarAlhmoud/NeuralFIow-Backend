@@ -13,7 +13,7 @@ const createTaskSchema = z.object({
     priority: commonSchemas.priority.optional(),
     status: commonSchemas.status.optional(),
     order: z.number().min(1).max(6).optional(),
-    dueDate: z.string().optional(),
+    dueDate: z.string().nullable().optional(),
     estimate: z.number().positive().optional(),
     tags: z.array(z.string()).optional(),
     assignees: z.array(commonSchemas.mongoId).optional(),
@@ -78,8 +78,8 @@ router.get(
       const { projectId } = req.params;
 
       const tasks = await Task.find({ projectId })
-        .populate("createdBy", "name email avatarUrl")
-        .populate("assignees", "name email avatarUrl")
+        .populate("createdBy", "_id name email avatarURL")
+        .populate("assignees", "_id name email avatarURL")
         .sort({ order: 1, createdAt: -1 });
 
       res.json({
@@ -104,10 +104,10 @@ const updateTaskSchema = z.object({
     description: z.string().max(2000).optional(),
     priority: commonSchemas.priority.optional(),
     status: commonSchemas.status.optional(),
-    dueDate: z.string().optional(),
+    dueDate: z.string().nullable().optional(),
     estimate: z.number().positive().optional(),
     order: z.number().min(1).max(6).optional(),
-    labels: z.array(z.string()).optional(),
+    tags: z.array(z.string()).optional(),
     assignees: z.array(commonSchemas.mongoId).optional(),
   }),
 });
@@ -219,7 +219,7 @@ router.patch(
 router.delete(
   "/:id",
   validate(deleteTaskSchema),
-  requireWorkspaceRole("member"),
+  requireWorkspaceRole("manager"),
   async (req, res) => {
     try {
       const taskId = req.validated.params.id;
