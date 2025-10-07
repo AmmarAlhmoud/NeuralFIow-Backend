@@ -159,7 +159,10 @@ router.get(
         _id: id,
         "members.uid": _id,
       })
-        .populate("members.uid", "_id uid name email avatarURL position")
+        .populate(
+          "members.uid",
+          "_id uid name email avatarURL position isOnline"
+        )
         .populate("ownerId", "name email avatarURL position")
         .sort({ createdAt: -1 });
 
@@ -280,9 +283,6 @@ router.patch(
       if (!member) {
         return res.status(404).json({ message: "Workspace member not found" });
       }
-
-      const currentRole = member.role;
-      const nextRole = role ?? currentRole;
 
       // 1) Only owner-admin can change roles at all
       const isActingOwner =
