@@ -31,6 +31,9 @@ async function firebaseAuthMiddleware(req, res, next) {
       });
     }
 
+    user.isOnline = true;
+    await user.save();
+
     if (!req.cookies?.token) {
       const cookieOptions = {
         httpOnly: true,
