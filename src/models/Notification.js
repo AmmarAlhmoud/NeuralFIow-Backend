@@ -11,12 +11,15 @@ const NotificationSchema = new Schema(
     type: {
       type: String,
       enum: [
+        "membership_invite",
+        "membership_removed",
+        "role_updated",
         "task_assigned",
         "task_updated",
+        "task_deleted",
         "comment_added",
         "status_changed",
         "mention",
-        "workspace_invite",
       ],
       required: true,
     },
@@ -30,6 +33,7 @@ const NotificationSchema = new Schema(
       workspaceId: { type: Schema.Types.ObjectId, ref: "Workspace" },
       projectId: { type: Schema.Types.ObjectId, ref: "Project" },
       actorId: { type: Schema.Types.ObjectId, ref: "User" },
+      inviteId: { type: Schema.Types.ObjectId, ref: "Invite" },
     },
     read: {
       type: Boolean,

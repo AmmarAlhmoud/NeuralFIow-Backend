@@ -50,7 +50,11 @@ async function firebaseAuthMiddleware(req, res, next) {
     next();
   } catch (error) {
     console.error("🔐 Authentication error:", error);
-    return res.status(401).json({ message: "Invalid authentication token" });
+    if (error.code === "auth/id-token-expired") {
+      res.status(401).send({ error: "Token expired, please refresh." });
+    } else {
+      res.status(401).send({ error: "Unauthorized" });
+    }
   }
 }
 

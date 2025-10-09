@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const Workspace = require("../models/Workspace");
 const User = require("../models/User");
+const Invite = require("../models/Invite");
+const Notification = require("../models/Notification");
 const { requireWorkspaceRole } = require("../middleware/rbac");
 const { validate, z, commonSchemas } = require("../middleware/validate");
 
@@ -208,8 +210,15 @@ const deleteMemberSchema = z.object({
   }),
 });
 
+const inviteMemberSchema = z.object({
+  params: z.object({
+    workspaceId: commonSchemas.mongoId,
+    inviteId: commonSchemas.mongoId,
+  }),
+});
+
 router.post(
-  "/:workspaceId/members",
+  "/:workspaceId/members/invite",
   validate(addMemberSchema),
   requireWorkspaceRole("manager"),
   async (req, res) => {
@@ -229,6 +238,85 @@ router.post(
         (m) => m.uid.toString() === user._id.toString()
       );
 
+      const existingInvite = await Invite.findOne({
+        workspaceId,
+        userId: user._id,
+      });
+
+      if (existingMember) {
+        return res.status(400).json({
+          message: "User is already a workspace member",
+        });
+      }
+
+      if (existingInvite) {
+        return res.status(400).json({
+          message: "User already has a pending invite",
+        });
+      }
+
+      const invite = new Invite({
+        workspaceId,
+        userId: user._id,
+        role,
+        invitedBy: req.dbUser._id,
+        createdAt: new Date(),
+      });
+      await invite.save();
+
+      const notification = new Notification({
+        userId: user._id,
+        type: "membership_invite",
+        title: "Membership Invite",
+        message: `You have been invited to "${workspace.name}" workspace by ${req.dbUser.name}.`,
+        payload: {
+          workspaceId,
+          actorId: req.dbUser._id,
+          inviteId: invite._id,
+        },
+      });
+      await notification.save();
+
+      res.status(200).json({
+        success: true,
+        message: "Membership invite sent",
+      });
+    } catch (error) {
+      console.error("🏢 Invite member error:", error);
+      res.status(500).json({
+        message: "Failed to send workspace membership invite",
+      });
+    }
+  }
+);
+
+router.post(
+  "/:workspaceId/members/accept-invite/:inviteId",
+  validate(inviteMemberSchema),
+  async (req, res) => {
+    try {
+      const { workspaceId, inviteId } = req.validated.params;
+      const userId = req.dbUser._id;
+
+      const invite = await Invite.findOne({
+        _id: inviteId,
+        workspaceId,
+        userId,
+      });
+
+      if (!invite) {
+        return res.status(404).json({
+          message: "Invite not found or already accepted/declined.",
+        });
+      }
+
+      const workspace = await Workspace.findById(workspaceId);
+
+      // Check if user is already a member
+      const existingMember = workspace.members.find(
+        (m) => m.uid.toString() === userId.toString()
+      );
+
       if (existingMember) {
         return res.status(400).json({
           message: "User is already a workspace member",
@@ -236,27 +324,88 @@ router.post(
       }
 
       workspace.members.push({
-        uid: user._id,
-        role,
-        position: user.position,
+        uid: userId,
+        role: invite.role,
         joinedAt: new Date(),
       });
-
       await workspace.save();
 
-      req.io.to(`user:${user._id}`).emit("workspace:invited", {
-        workspace: { _id: workspace._id, name: workspace.name },
-        role,
-      });
+      await Invite.deleteOne({ _id: inviteId });
 
-      res.status(201).json({
+      const notification = new Notification({
+        userId: workspace.ownerId,
+        type: "membership_invite",
+        title: "Membership Invite Accepted",
+        message: `Your invite to ${req.dbUser.name} to join "${workspace.name}" workspace has been accepted.`,
+        payload: {
+          workspaceId,
+          actorId: req.dbUser._id,
+        },
+      });
+      await notification.save();
+
+      res.status(200).json({
         success: true,
-        data: { member: { uid: user._id, role, position: user.position } },
+        data: {
+          member: {
+            uid: userId,
+            role: invite.role,
+          },
+        },
       });
     } catch (error) {
-      console.error("🏢 Add member error:", error);
+      console.error("🏢 Accept invite error:", error);
       res.status(500).json({
-        message: "Failed to add workspace member",
+        message: "Failed to accept workspace membership invite",
+      });
+    }
+  }
+);
+
+router.post(
+  "/:workspaceId/members/decline-invite/:inviteId",
+  validate(inviteMemberSchema),
+  async (req, res) => {
+    try {
+      const { workspaceId, inviteId } = req.validated.params;
+      const userId = req.dbUser._id;
+
+      const invite = await Invite.findOne({
+        _id: inviteId,
+        workspaceId,
+        userId,
+      });
+
+      if (!invite) {
+        return res.status(404).json({
+          message: "Invite not found or already processed.",
+        });
+      }
+
+      await Invite.deleteOne({ _id: inviteId });
+
+      const workspace = await Workspace.findById(workspaceId).lean();
+
+      const notification = new Notification({
+        userId: workspace.ownerId,
+        type: "membership_invite",
+        title: "Membership Invite Declined",
+        message: `Your invite to ${req.dbUser.name} to join "${workspace.name}" workspace has been declined.`,
+        payload: {
+          workspaceId,
+          actorId: req.dbUser._id,
+        },
+      });
+      await notification.save();
+
+      res.status(200).json({
+        success: true,
+        message: "Invite declined and removed successfully.",
+      });
+    } catch (error) {
+      console.error("🏢 Declining invite error:", error);
+      res.status(500).json({
+        message: "Failed to decline workspace membership invite",
       });
     }
   }
@@ -269,7 +418,7 @@ router.patch(
   async (req, res) => {
     try {
       const { email, role } = req.validated.body;
-      const { memberId } = req.validated.params;
+      const { memberId, workspaceId } = req.validated.params;
 
       const workspace = req.workspace;
       const actingMembership = req.membership;
@@ -357,6 +506,37 @@ router.patch(
 
       await workspace.save();
 
+      const previousRole = actingMembership.role;
+      let message;
+
+      if (role === "manager" && previousRole !== "manager") {
+        message = `Your role in "${workspace.name}" workspace was promoted by ${req.dbUser.name} to manager.`;
+      } else if (role === "member" && previousRole === "manager") {
+        message = `Your role in "${workspace.name}" workspace was demoted by ${req.dbUser.name} to member.`;
+      } else if (role === "viewer" && previousRole === "member") {
+        message = `Your role in "${workspace.name}" workspace was demoted by ${req.dbUser.name} to viewer.`;
+      } else if (role === "member" && previousRole === "viewer") {
+        message = `Your role in "${workspace.name}" workspace was promoted by ${req.dbUser.name} to member.`;
+      } else if (role === "manager" && previousRole === "viewer") {
+        message = `Your role in "${workspace.name}" workspace was promoted by ${req.dbUser.name} to manager.`;
+      } else if (role === "viewer" && previousRole === "manager") {
+        message = `Your role in "${workspace.name}" workspace was demoted by ${req.dbUser.name} to viewer.`;
+      } else {
+        message = `Your role in "${workspace.name}" workspace was changed by ${req.dbUser.name}.`;
+      }
+
+      const notification = new Notification({
+        userId: member.uid,
+        type: "role_updated",
+        title: "Role Updated",
+        message,
+        payload: {
+          workspaceId,
+          actorId: req.dbUser._id,
+        },
+      });
+      await notification.save();
+
       res.status(200).json({
         success: true,
         data: { member },
@@ -427,6 +607,18 @@ router.delete(
       }
 
       await workspace.save();
+
+      const notification = new Notification({
+        userId: member._id,
+        type: "membership_removed",
+        title: "Membership Removed",
+        message: `Your membership in "${workspace.name}" workspace was removed by ${req.dbUser.name}.`,
+        payload: {
+          workspaceId: workspace.workspaceId,
+          actorId: req.dbUser._id,
+        },
+      });
+      await notification.save();
 
       return res.json({
         success: true,

@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const Task = require("../models/Task");
+const Notification = require("../models/Notification");
 const { requireWorkspaceRole } = require("../middleware/rbac");
 const { validate, z, commonSchemas } = require("../middleware/validate");
 const { aiQueue } = require("../queues/ai-queue");
@@ -51,11 +52,25 @@ router.post(
 
       const populatedTask = await Task.findById(task._id)
         .populate("createdBy", "name email avatarUrl")
-        .populate("assignees", "name email avatarUrl");
+        .populate("assignees", "_id name email avatarUrl");
 
-      req.io.to(`project:${task.projectId}`).emit("task:created", {
-        task: populatedTask,
-      });
+      const assignees = populatedTask.assignees || [];
+
+      for (const assignee of assignees) {
+        const notification = new Notification({
+          userId: assignee._id,
+          type: "task_assigned",
+          title: "Task Assigned",
+          message: `Task "${populatedTask.title}" was assigned by ${req.dbUser.name}.`,
+          payload: {
+            taskId: populatedTask._id,
+            projectId: populatedTask.projectId,
+            workspaceId: populatedTask.workspaceId,
+            actorId: req.dbUser._id,
+          },
+        });
+        await notification.save();
+      }
 
       res.status(201).json({
         success: true,
@@ -183,12 +198,13 @@ router.patch(
             { $inc: { order: 1 } }
           );
         }
-        req.io.to(`project:${task.projectId}`).emit("task:moved", {
-          taskId: task._id,
-          oldOrder,
-          newOrder,
-          status,
-        });
+
+        // req.io.to(`project:${task.projectId}`).emit("task:moved", {
+        //   taskId: task._id,
+        //   oldOrder,
+        //   newOrder,
+        //   status,
+        // });
       }
 
       const updatedTask = await Task.findByIdAndUpdate(req.params.id, updates, {
@@ -196,12 +212,25 @@ router.patch(
         runValidators: true,
       })
         .populate("createdBy", "name email avatarUrl")
-        .populate("assignees", "name email avatarUrl");
+        .populate("assignees", "_id name email avatarUrl");
 
-      req.io.to(`project:${task.projectId}`).emit("task:updated", {
-        task: updatedTask,
-        changes: updates,
-      });
+      const assignees = updatedTask.assignees || [];
+
+      for (const assignee of assignees) {
+        const notification = new Notification({
+          userId: assignee._id,
+          type: "task_updated",
+          title: "Task Updated",
+          message: `Task "${updatedTask.title}" was updated by ${req.dbUser.name}.`,
+          payload: {
+            taskId: updatedTask._id,
+            projectId: updatedTask.projectId,
+            workspaceId: updatedTask.workspaceId,
+            actorId: req.dbUser._id,
+          },
+        });
+        await notification.save();
+      }
 
       res.status(200).json({
         success: true,
@@ -232,9 +261,22 @@ router.delete(
         });
       }
 
-      req.io.to(`project:${task.projectId}`).emit("task:deleted", {
-        task,
-      });
+      const assignees = task.assignees || [];
+      for (const assignee of assignees) {
+        const notification = new Notification({
+          userId: assignee._id,
+          type: "task_deleted",
+          title: "Task Deleted",
+          message: `Task "${task.title}" was deleted by ${req.dbUser.name}.`,
+          payload: {
+            taskId: task._id,
+            projectId: task.projectId,
+            workspaceId: task.workspaceId,
+            actorId: req.dbUser._id,
+          },
+        });
+        await notification.save();
+      }
 
       res.status(204).json({
         success: true,
@@ -248,6 +290,7 @@ router.delete(
     }
   }
 );
+
 // AI endpoints
 router.post(
   "/:id/ai/summarize",

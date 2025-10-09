@@ -1,34 +1,24 @@
 const express = require("express");
 const router = express.Router();
 const Notification = require("../models/Notification");
-const User = require("../models/User");
 
 router.get("/", async (req, res) => {
   try {
-    const userUid = req.user.uid;
-    const user = await User.findOne({ uid: userUid });
-
-    if (!user) {
-      return res.status(404).json({
-        message: "User not found",
-      });
-    }
-
-    const notifications = await Notification.find({ userId: user._id })
-      .populate("payload.actorId", "name email avatarUrl")
+    const notifications = await Notification.find({ userId: req.dbUser._id })
+      .populate("payload.actorId", "_id name email avatarUrl")
       .sort({ createdAt: -1 })
       .limit(50);
 
     const unreadCount = await Notification.countDocuments({
-      userId: user._id,
+      userId: req.dbUser._id,
       read: false,
     });
 
-    res.json({
+    res.status(200).json({
       success: true,
-      data: notifications,
-      meta: {
-        unreadCount,
+      data: {
+        length: unreadCount,
+        data: notifications,
       },
     });
   } catch (error) {
@@ -41,11 +31,8 @@ router.get("/", async (req, res) => {
 
 router.patch("/:id/read", async (req, res) => {
   try {
-    const userUid = req.user.uid;
-    const user = await User.findOne({ uid: userUid });
-
     const notification = await Notification.findOneAndUpdate(
-      { _id: req.params.id, userId: user._id },
+      { _id: req.params.id, userId: req.dbUser._id },
       {
         read: true,
         readAt: new Date(),
@@ -59,7 +46,7 @@ router.patch("/:id/read", async (req, res) => {
       });
     }
 
-    res.json({
+    res.status(200).json({
       success: true,
       data: notification,
     });
