@@ -3,7 +3,10 @@ const router = express.Router();
 const { z } = require("zod");
 const admin = require("firebase-admin");
 const User = require("../models/User");
-const { firebaseAuthMiddleware } = require("../middleware/auth");
+const {
+  firebaseAuthMiddleware,
+  attatchAuthUser,
+} = require("../middleware/auth");
 const { validate, commonSchemas } = require("../middleware/validate");
 
 router.post("/", firebaseAuthMiddleware, (req, res) => {
@@ -83,16 +86,20 @@ router.patch(
   }
 );
 
-router.post("/logout", firebaseAuthMiddleware, async (req, res) => {
-  res.clearCookie("token", {
-    httpOnly: true,
-    secure: true,
-    sameSite: process.env.NODE_ENV === "production" ? "Lax" : "None",
-  });
+router.post("/logout", attatchAuthUser, async (req, res) => {
+  try {
+    req.dbUser.isOnline = false;
+    await req.dbUser.save();
 
-  const { _id } = req.dbUser;
-  await User.findByIdAndUpdate({ _id }, { isOnline: false });
-  res.status(200).json({ message: "Logged out" });
+    res.clearCookie("token", {
+      httpOnly: true,
+      secure: true,
+      sameSite: process.env.NODE_ENV === "production" ? "Lax" : "None",
+    });
+    res.status(200).json({ message: "Logged out" });
+  } catch (err) {
+    res.status(500).json({ error: "Logout failed" });
+  }
 });
 
 module.exports = router;

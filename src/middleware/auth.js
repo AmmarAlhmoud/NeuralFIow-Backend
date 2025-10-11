@@ -2,7 +2,7 @@ const admin = require("firebase-admin");
 const { verifyIdToken } = require("../lib/firebase");
 const User = require("../models/User");
 
-async function firebaseAuthMiddleware(req, res, next) {
+const firebaseAuthMiddleware = async (req, res, next) => {
   try {
     let token = req.cookies?.token;
 
@@ -36,6 +36,7 @@ async function firebaseAuthMiddleware(req, res, next) {
 
     if (!req.cookies?.token) {
       const cookieOptions = {
+        maxAge: 60 * 60 * 1000,
         httpOnly: true,
         secure: true,
         sameSite: process.env.NODE_ENV === "production" ? "Lax" : "None",
@@ -56,9 +57,29 @@ async function firebaseAuthMiddleware(req, res, next) {
       res.status(401).send({ error: "Unauthorized" });
     }
   }
-}
+};
 
-async function decodeSocketAuth(socket, next) {
+const attatchAuthUser = async (req, res, next) => {
+  try {
+    let token = req.cookies?.token;
+    if (!token) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const decoded = await verifyIdToken(token);
+    const user = await User.findOne({ uid: decoded.uid });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    req.dbUser = user;
+
+    next();
+  } catch (err) {
+    res.status(500).json({ error: "Attatch User Faild" });
+  }
+};
+
+const decodeSocketAuth = async (socket, next) => {
   try {
     let token = socket.handshake.headers.cookie
       ?.split(";")
@@ -81,6 +102,6 @@ async function decodeSocketAuth(socket, next) {
     console.error("🔐 Socket authentication error:", error);
     next(new Error("Invalid authentication token"));
   }
-}
+};
 
-module.exports = { firebaseAuthMiddleware, decodeSocketAuth };
+module.exports = { firebaseAuthMiddleware, attatchAuthUser, decodeSocketAuth };
