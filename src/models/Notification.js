@@ -12,6 +12,7 @@ const NotificationSchema = new Schema(
       type: String,
       enum: [
         "membership_invite",
+        "membership_invite_status",
         "membership_removed",
         "role_updated",
         "task_assigned",

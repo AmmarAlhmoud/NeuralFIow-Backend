@@ -331,10 +331,11 @@ router.post(
       await workspace.save();
 
       await Invite.deleteOne({ _id: inviteId });
+      await Notification.deleteOne({ "payload.inviteId": inviteId });
 
       const notification = new Notification({
         userId: workspace.ownerId,
-        type: "membership_invite",
+        type: "membership_invite_status",
         title: "Membership Invite Accepted",
         message: `Your invite to ${req.dbUser.name} to join "${workspace.name}" workspace has been accepted.`,
         payload: {
@@ -383,12 +384,13 @@ router.post(
       }
 
       await Invite.deleteOne({ _id: inviteId });
+      await Notification.deleteOne({ "payload.inviteId": inviteId });
 
       const workspace = await Workspace.findById(workspaceId).lean();
 
       const notification = new Notification({
         userId: workspace.ownerId,
-        type: "membership_invite",
+        type: "membership_invite_status",
         title: "Membership Invite Declined",
         message: `Your invite to ${req.dbUser.name} to join "${workspace.name}" workspace has been declined.`,
         payload: {
