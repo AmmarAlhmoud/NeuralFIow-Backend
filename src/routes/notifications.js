@@ -29,6 +29,55 @@ router.get("/", async (req, res) => {
   }
 });
 
+router.delete("/", async (req, res) => {
+  try {
+    const notification = await Notification.deleteMany({
+      userId: req.dbUser._id,
+    });
+
+    if (!notification) {
+      return res.status(404).json({
+        message: "Notifications not found",
+      });
+    }
+
+    res.status(204).json({
+      success: true,
+      data: null,
+    });
+  } catch (error) {
+    console.error("🔔 All notifications deleted error:", error);
+    res.status(500).json({
+      message: "Failed to delete all notifications",
+    });
+  }
+});
+
+router.delete("/:id", async (req, res) => {
+  try {
+    const notification = await Notification.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.dbUser._id,
+    });
+
+    if (!notification) {
+      return res.status(404).json({
+        message: "Notification not found",
+      });
+    }
+
+    res.status(204).json({
+      success: true,
+      data: null,
+    });
+  } catch (error) {
+    console.error("🔔 Notification deleted error:", error);
+    res.status(500).json({
+      message: "Failed to delete notification",
+    });
+  }
+});
+
 router.patch("/:id/read", async (req, res) => {
   try {
     const notification = await Notification.findOneAndUpdate(
@@ -54,6 +103,34 @@ router.patch("/:id/read", async (req, res) => {
     console.error("🔔 Mark notification read error:", error);
     res.status(500).json({
       message: "Failed to mark notification as read",
+    });
+  }
+});
+
+router.patch("/mark-all-read", async (req, res) => {
+  try {
+    const notifications = await Notification.updateMany(
+      { userId: req.dbUser._id, read: false },
+      {
+        read: true,
+        readAt: new Date(),
+      }
+    );
+
+    if (!notifications) {
+      return res.status(404).json({
+        message: "Notifications not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: notifications,
+    });
+  } catch (error) {
+    console.error("🔔 Mark all notifications read error:", error);
+    res.status(500).json({
+      message: "Failed to mark all notifications as read",
     });
   }
 });
