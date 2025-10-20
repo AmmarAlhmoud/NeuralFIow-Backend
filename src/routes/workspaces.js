@@ -331,7 +331,10 @@ router.post(
       await workspace.save();
 
       await Invite.deleteOne({ _id: inviteId });
-      await Notification.deleteOne({ "payload.inviteId": inviteId });
+      await Notification.updateOne(
+        { "payload.inviteId": inviteId },
+        { $set: { read: true } }
+      );
 
       const notification = new Notification({
         userId: workspace.ownerId,
@@ -384,7 +387,10 @@ router.post(
       }
 
       await Invite.deleteOne({ _id: inviteId });
-      await Notification.deleteOne({ "payload.inviteId": inviteId });
+      await Notification.updateOne(
+        { "payload.inviteId": inviteId },
+        { $set: { read: true } }
+      );
 
       const workspace = await Workspace.findById(workspaceId).lean();
 
@@ -502,13 +508,13 @@ router.patch(
         member.uid = user._id;
       }
 
+      const previousRole = member.role;
       if (role) {
         member.role = role;
       }
 
       await workspace.save();
 
-      const previousRole = actingMembership.role;
       let message;
 
       if (role === "manager" && previousRole !== "manager") {
@@ -611,7 +617,7 @@ router.delete(
       await workspace.save();
 
       const notification = new Notification({
-        userId: member._id,
+        userId: member.uid,
         type: "membership_removed",
         title: "Membership Removed",
         message: `Your membership in "${workspace.name}" workspace was removed by ${req.dbUser.name}.`,
