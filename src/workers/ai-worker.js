@@ -1,9 +1,11 @@
 require("dotenv").config();
 const { Worker } = require("bullmq");
 const mongoose = require("mongoose");
+const { io } = require("socket.io-client");
 const { connectDB } = require("../lib/db");
 const Task = require("../models/Task");
 const Comment = require("../models/Comment");
+const Project = require("../models/Project");
 const { getGemini } = require("../lib/ai");
 const {
   buildSummaryPrompt,
@@ -16,6 +18,27 @@ const {
     await connectDB();
     console.log("🤖 AI Worker starting...");
 
+    // Connect to main server's Socket.IO as worker
+    const socket = io(process.env.BACKEND_URL || "https://localhost:8080", {
+      auth: { type: "worker", secret: process.env.WORKER_SECRET },
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 10,
+      rejectUnauthorized: false,
+    });
+
+    socket.on("connect", () => {
+      console.log("🔌 Worker connected to Socket.IO server");
+    });
+
+    socket.on("disconnect", () => {
+      console.log("🔌 Worker disconnected from Socket.IO server");
+    });
+
+    socket.on("connect_error", (err) => {
+      console.error("🔌 Worker connection error:", err.message);
+    });
+
     const model = getGemini();
 
     const worker = new Worker(
@@ -24,7 +47,10 @@ const {
         const { name, data } = job;
         console.log(`🔄 Processing AI job: ${name} for task ${data.taskId}`);
 
-        const task = await Task.findById(data.taskId);
+        const task = await Task.findById(data.taskId).populate(
+          "projectId",
+          "_id"
+        );
         if (!task) {
           throw new Error(`Task not found: ${data.taskId}`);
         }
@@ -45,14 +71,27 @@ const {
             task.ai.lastProcessed = new Date();
             await task.save();
 
-            console.log(`✅ Generated summary for task ${task._id}`);
-            return { success: true, type: "summary", taskId: task._id };
+            // Emit to Socket.IO
+            socket.emit("ai:result", {
+              type: "summary",
+              taskId: task._id.toString(),
+              projectId: task.projectId._id.toString(),
+              data: { summary: text.trim(), lastProcessed: new Date() },
+            });
+
+            return {
+              success: true,
+              type: "summary",
+              taskId: task._id,
+            };
           }
 
           if (name === "subtasks") {
             const prompt = buildSubtasksPrompt(task);
             const result = await model.generateContent(prompt);
             const text = result.response.text();
+
+            console.log("AI Subtasks Response:", text);
 
             const lines = text
               .split(/\n+/)
@@ -68,6 +107,15 @@ const {
             console.log(
               `✅ Generated ${lines.length} subtasks for task ${task._id}`
             );
+
+            // Emit to Socket.IO
+            socket.emit("ai:result", {
+              type: "subtasks",
+              taskId: task._id.toString(),
+              projectId: task.projectId._id.toString(),
+              data: { subtasks: lines, lastProcessed: new Date() },
+            });
+
             return {
               success: true,
               type: "subtasks",
@@ -81,46 +129,50 @@ const {
             const result = await model.generateContent(prompt);
             const text = result.response.text();
 
+            let priority, reason;
+
             try {
               const parsed = JSON.parse(text.trim());
               if (
                 parsed.priority &&
                 ["low", "medium", "high", "critical"].includes(parsed.priority)
               ) {
-                task.ai = task.ai || {};
-                task.ai.suggestedPriority = parsed.priority;
-                task.ai.lastProcessed = new Date();
-                await task.save();
-
-                console.log(
-                  `✅ Suggested priority '${parsed.priority}' for task ${task._id}`
-                );
-                return {
-                  success: true,
-                  type: "priority",
-                  taskId: task._id,
-                  priority: parsed.priority,
-                };
+                priority = parsed.priority;
+                reason = parsed.reason || "AI suggested priority";
               }
             } catch (parseError) {
               const priorityMatch = text.match(/(low|medium|high|critical)/i);
               if (priorityMatch) {
-                const priority = priorityMatch[1].toLowerCase();
-                task.ai = task.ai || {};
-                task.ai.suggestedPriority = priority;
-                task.ai.lastProcessed = new Date();
-                await task.save();
-
-                console.log(
-                  `✅ Extracted priority '${priority}' for task ${task._id}`
-                );
-                return {
-                  success: true,
-                  type: "priority",
-                  taskId: task._id,
-                  priority,
-                };
+                priority = priorityMatch[1].toLowerCase();
+                reason = "Extracted from AI response";
               }
+            }
+
+            if (priority) {
+              task.ai = task.ai || {};
+              task.ai.suggestedPriority = priority;
+              task.ai.priorityReason = reason;
+              task.ai.lastProcessed = new Date();
+              await task.save();
+
+              console.log(
+                `✅ Suggested priority '${priority}' for task ${task._id}`
+              );
+
+              // Emit to Socket.IO
+              socket.emit("ai:result", {
+                type: "priority",
+                taskId: task._id.toString(),
+                projectId: task.projectId._id.toString(),
+                data: { priority, reason, lastProcessed: new Date() },
+              });
+
+              return {
+                success: true,
+                type: "priority",
+                taskId: task._id,
+                priority,
+              };
             }
 
             throw new Error("Could not determine priority from AI response");
@@ -152,6 +204,15 @@ const {
 
     process.on("SIGTERM", async () => {
       console.log("🔄 AI Worker shutting down...");
+      socket.disconnect();
+      await worker.close();
+      await mongoose.connection.close();
+      process.exit(0);
+    });
+
+    process.on("SIGINT", async () => {
+      console.log("🔄 AI Worker shutting down...");
+      socket.disconnect();
       await worker.close();
       await mongoose.connection.close();
       process.exit(0);

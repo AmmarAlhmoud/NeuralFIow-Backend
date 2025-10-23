@@ -81,6 +81,20 @@ const attatchAuthUser = async (req, res, next) => {
 
 const decodeSocketAuth = async (socket, next) => {
   try {
+    // Allow worker connections with valid secret
+    if (socket.handshake.auth?.type === "worker") {
+      const workerSecret = socket.handshake.auth?.secret;
+
+      if (workerSecret === process.env.WORKER_SECRET) {
+        console.log("🤖 Worker connection authorized");
+        socket.isWorker = true;
+        return next();
+      } else {
+        return next(new Error("Invalid worker secret"));
+      }
+    }
+
+    // Regular user authentication
     let token = socket.handshake.headers.cookie
       ?.split(";")
       .map((c) => c.trim())

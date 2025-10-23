@@ -11,7 +11,10 @@ const { connectDB } = require("./lib/db");
 const routes = require("./routes");
 const { attachIO } = require("./middleware/attach-io");
 const { decodeSocketAuth } = require("./middleware/auth");
-const { initializeSocketManager } = require("./workers/socketManager");
+const {
+  initializeSocketManager,
+  closeSocketManager,
+} = require("./workers/socketManager");
 
 const app = express();
 
@@ -102,8 +105,9 @@ io.use(decodeSocketAuth);
 })();
 
 // Graceful shutdown on SIGTERM
-process.on("SIGTERM", () => {
+process.on("SIGTERM", async () => {
   console.log("🔄 SIGTERM received, shutting down gracefully");
+  await closeSocketManager();
   server.close(() => {
     console.log("✅ Process terminated");
   });

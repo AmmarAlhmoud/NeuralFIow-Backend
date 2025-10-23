@@ -6,7 +6,8 @@ function buildSummaryPrompt(task, comments) {
 - Important deadlines or milestones
 - Current status and next steps
 
-Format as bullet points starting with • and keep each point under 100 characters.`;
+Format as bullet points starting with • and keep each point under 100 characters.
+Return plain text with each bullet on a new line (no HTML tags).`;
 
   const taskInfo = `
 TASK DETAILS:
@@ -17,9 +18,7 @@ Status: ${task.status}
 Due Date: ${
     task.dueDate ? task.dueDate.toISOString().split("T")[0] : "No due date"
   }
-Labels: ${
-    task.labels && task.labels.length > 0 ? task.labels.join(", ") : "None"
-  }`;
+tags: ${task.tags && task.tags.length > 0 ? task.tags.join(", ") : "None"}`;
 
   const commentsInfo =
     comments.length > 0
@@ -38,22 +37,30 @@ Labels: ${
 }
 
 function buildSubtasksPrompt(task) {
-  return `Break down the following task into 6-10 specific, actionable subtasks. Each subtask should:
-- Start with an action verb (Create, Update, Test, Review, etc.)
-- Be specific and measurable
-- Take 1-4 hours to complete
-- Include clear acceptance criteria
-- Be ordered logically
+  return `Break down the following task into 6-8 specific, actionable subtasks.
 
-Format as a simple list, one subtask per line.
-
-TASK TO BREAK DOWN:
+TASK DETAILS:
 Title: ${task.title}
 Description: ${task.description || "No additional description provided"}
 Priority: ${task.priority}
 Estimated Hours: ${task.estimate || "Not specified"}
 
-Generate practical subtasks that a developer/team member could immediately start working on:`;
+REQUIREMENTS FOR EACH SUBTASK:
+- Start with an action verb (Create, Update, Test, Review, Design, Implement, etc.)
+- Be specific and measurable
+- Take 1-4 hours to complete
+- Be ordered logically by dependency
+
+IMPORTANT: Return ONLY a plain text list with one subtask per line. Do NOT use markdown, bullets, or numbering. Do NOT include any explanations or additional text.
+
+Example format:
+Create database schema for user profiles
+Implement user registration API endpoint
+Design login UI components
+Write unit tests for authentication
+Review and optimize security measures
+
+Generate 6-8 subtasks now:`;
 }
 
 function buildPriorityPrompt(task) {
@@ -63,10 +70,10 @@ function buildPriorityPrompt(task) {
       )} days from now)`
     : "No due date specified";
 
-  const labelsContext =
-    task.labels && task.labels.length > 0
-      ? `Labels: ${task.labels.join(", ")}`
-      : "No labels assigned";
+  const tagsContext =
+    task.tags && task.tags.length > 0
+      ? `tags: ${task.tags.join(", ")}`
+      : "No tags assigned";
 
   return `Analyze this task and suggest an appropriate priority level. Consider urgency, impact, dependencies, and business value.
 
@@ -74,7 +81,7 @@ TASK ANALYSIS:
 Title: ${task.title}
 Description: ${task.description || "No description provided"}
 ${dueDateContext}
-${labelsContext}
+${tagsContext}
 Current Priority: ${task.priority}
 Estimated Effort: ${task.estimate ? task.estimate + " hours" : "Not estimated"}
 
@@ -84,7 +91,9 @@ PRIORITY LEVELS:
 - medium: Standard tasks, moderate impact, flexible deadlines
 - low: Nice-to-have features, documentation, cleanup tasks
 
-Respond with JSON only:
+IMPORTANT: Respond with ONLY the raw JSON object. Do NOT wrap it in markdown code blocks or backticks. Do NOT include \`\`\`json or \`\`\`.
+
+Response format:
 {
   "priority": "low|medium|high|critical",
   "reason": "Brief explanation (max 100 characters)"
