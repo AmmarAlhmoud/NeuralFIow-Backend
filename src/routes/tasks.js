@@ -16,6 +16,7 @@ const createTaskSchema = z.object({
     order: z.number().min(1).max(6).optional(),
     dueDate: z.string().nullable().optional(),
     estimate: z.number().positive().optional(),
+    progress: z.number().positive().optional(),
     tags: z.array(z.string()).optional(),
     assignees: z.array(commonSchemas.mongoId).optional(),
   }),
@@ -110,6 +111,31 @@ router.get(
   }
 );
 
+router.get(
+  "/by-project/:projectId/task/:taskId",
+  requireWorkspaceRole("member"),
+  async (req, res) => {
+    try {
+      const { taskId } = req.params;
+
+      const task = await Task.findById({ _id: taskId })
+        .populate("createdBy", "_id name email avatarURL")
+        .populate("assignees", "_id name email avatarURL")
+        .sort({ order: 1, createdAt: -1 });
+
+      res.json({
+        success: true,
+        data: task,
+      });
+    } catch (error) {
+      console.error("📝 Get task error:", error);
+      res.status(500).json({
+        message: "Failed to fetch task",
+      });
+    }
+  }
+);
+
 const updateTaskSchema = z.object({
   params: z.object({
     id: commonSchemas.mongoId,
@@ -121,6 +147,7 @@ const updateTaskSchema = z.object({
     status: commonSchemas.status.optional(),
     dueDate: z.string().nullable().optional(),
     estimate: z.number().positive().optional(),
+    progress: z.number().positive().optional(),
     order: z.number().min(1).max(6).optional(),
     tags: z.array(z.string()).optional(),
     assignees: z.array(commonSchemas.mongoId).optional(),
