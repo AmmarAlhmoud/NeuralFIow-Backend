@@ -31,6 +31,7 @@ const TaskSchema = new Schema(
     },
     dueDate: Date,
     estimate: Number,
+    progress: Number,
     tags: [String],
     attachments: [
       {
@@ -48,6 +49,7 @@ const TaskSchema = new Schema(
           type: String,
           enum: ["low", "medium", "high", "critical"],
         },
+        priorityReason: String,
         lastProcessed: Date,
       },
       required: false,
