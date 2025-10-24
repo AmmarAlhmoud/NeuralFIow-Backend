@@ -6,6 +6,7 @@ const { connectDB } = require("../lib/db");
 const Task = require("../models/Task");
 const Comment = require("../models/Comment");
 const Project = require("../models/Project");
+const User = require("../models/User");
 const { getGemini } = require("../lib/ai");
 const {
   buildSummaryPrompt,
@@ -91,8 +92,6 @@ const {
             const result = await model.generateContent(prompt);
             const text = result.response.text();
 
-            console.log("AI Subtasks Response:", text);
-
             const lines = text
               .split(/\n+/)
               .map((s) => s.replace(/^[-*\d.\)\s]+/, "").trim())
@@ -103,10 +102,6 @@ const {
             task.ai.suggestedSubtasks = lines;
             task.ai.lastProcessed = new Date();
             await task.save();
-
-            console.log(
-              `✅ Generated ${lines.length} subtasks for task ${task._id}`
-            );
 
             // Emit to Socket.IO
             socket.emit("ai:result", {
@@ -154,10 +149,6 @@ const {
               task.ai.priorityReason = reason;
               task.ai.lastProcessed = new Date();
               await task.save();
-
-              console.log(
-                `✅ Suggested priority '${priority}' for task ${task._id}`
-              );
 
               // Emit to Socket.IO
               socket.emit("ai:result", {

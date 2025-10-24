@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const Comment = require("../models/Comment");
 const User = require("../models/User");
+const Task = require("../models/Task");
+const Notification = require("../models/Notification");
 const { requireWorkspaceRole } = require("../middleware/rbac");
 const { validate, z, commonSchemas } = require("../middleware/validate");
 
@@ -20,24 +22,42 @@ router.post(
   async (req, res) => {
     try {
       const { taskId, body, mentions } = req.validated.body;
-      const userUid = req.user.uid;
-
-      const user = await User.findOne({ uid: userUid });
 
       const comment = await Comment.create({
         taskId,
         body,
-        authorId: user._id,
+        authorId: req.dbUser._id,
         mentions: mentions || [],
       });
 
       const populatedComment = await Comment.findById(comment._id)
-        .populate("authorId", "name email avatarUrl")
-        .populate("mentions", "name email avatarUrl");
+        .populate("authorId", "_id name email avatarUrl")
+        .populate("mentions", "_id name email avatarUrl");
 
-      req.io.to(`task:${taskId}`).emit("comment:created", {
-        comment: populatedComment,
-      });
+      const task = await Task.findById({ _id: taskId })
+        .populate("createdBy", "_id name email avatarUrl")
+        .populate("assignees", "_id name email avatarUrl");
+
+      const assignees = task.assignees || [];
+      let notification;
+
+      for (const assignee of assignees) {
+        if (assignee._id.toString() !== req.dbUser._id.toString()) {
+          notification = new Notification({
+            userId: assignee._id,
+            type: "new_comment",
+            title: "New Comment",
+            message: `New comment on "${task.title}" task was added by ${req.dbUser.name}.`,
+            payload: {
+              taskId: task._id,
+              projectId: task.projectId,
+              workspaceId: task.workspaceId,
+              actorId: req.dbUser._id,
+            },
+          });
+        }
+        await notification.save();
+      }
 
       res.status(201).json({
         success: true,
@@ -60,8 +80,8 @@ router.get(
       const { taskId } = req.params;
 
       const comments = await Comment.find({ taskId })
-        .populate("authorId", "name email avatarUrl")
-        .populate("mentions", "name email avatarUrl")
+        .populate("authorId", "_id name email avatarUrl")
+        .populate("mentions", "_id name email avatarUrl")
         .sort({ createdAt: 1 });
 
       res.json({
