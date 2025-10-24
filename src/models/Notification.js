@@ -19,6 +19,8 @@ const NotificationSchema = new Schema(
         "task_updated",
         "task_deleted",
         "new_comment",
+        "project_updated",
+        "project_deleted",
         "status_changed",
         "mention",
       ],

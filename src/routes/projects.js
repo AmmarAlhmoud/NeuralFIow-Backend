@@ -3,9 +3,9 @@ const crypto = require("crypto");
 const router = express.Router();
 const Project = require("../models/Project");
 const Task = require("../models/Task");
+const Notification = require("../models/Notification");
 const { requireWorkspaceRole } = require("../middleware/rbac");
 const { validate, z, commonSchemas } = require("../middleware/validate");
-
 
 const generateProjectKey = async (name, workspaceId) => {
   let baseKey = name
@@ -46,6 +46,7 @@ const createProjectSchema = z.object({
       .transform((val) => val.toUpperCase())
       .optional(),
     description: z.string().max(500).optional(),
+    status: z.enum(["active", "archived", "completed"]).optional(),
   }),
 });
 
@@ -87,6 +88,7 @@ router.post(
         name,
         key: providedKey,
         description,
+        status,
       } = req.validated.body;
 
       // Ensure key is unique (use provided or generate)
@@ -100,6 +102,7 @@ router.post(
         name,
         key,
         description,
+        status,
         createdBy: req.dbUser._id,
       });
 
@@ -184,6 +187,44 @@ router.patch(
         { new: true, runValidators: true }
       );
 
+      const tasks = await Task.find({ projectId: project._id }).populate(
+        "assignees",
+        "_id"
+      );
+
+      // Collect unique assignee IDs and exclude the current user
+      const uniqueAssigneeIds = new Set();
+
+      for (const task of tasks) {
+        const assignees = task.assignees || [];
+        for (const assignee of assignees) {
+          // Only add if it's not the user who made the update
+          if (assignee._id.toString() !== req.dbUser._id.toString()) {
+            uniqueAssigneeIds.add(assignee._id.toString());
+          }
+        }
+      }
+
+      // Create one notification per unique assignee
+      const notificationPromises = Array.from(uniqueAssigneeIds).map(
+        (assigneeId) => {
+          const notification = new Notification({
+            userId: assigneeId,
+            type: "project_updated",
+            title: "Project Updated",
+            message: `Project "${project.name}" with the key "${project.key}" was updated by ${req.dbUser.name}.`,
+            payload: {
+              projectId: project._id,
+              workspaceId: project.workspaceId,
+              actorId: req.dbUser._id,
+            },
+          });
+          return notification.save();
+        }
+      );
+
+      await Promise.all(notificationPromises);
+
       res.status(200).json({
         success: true,
         data: project,
@@ -226,6 +267,44 @@ router.delete(
           message: "Project does not belong to this workspace",
         });
       }
+
+      const tasks = await Task.find({ projectId: currentProject._id }).populate(
+        "assignees",
+        "_id"
+      );
+
+      // Collect unique assignee IDs and exclude the current user
+      const uniqueAssigneeIds = new Set();
+
+      for (const task of tasks) {
+        const assignees = task.assignees || [];
+        for (const assignee of assignees) {
+          // Only add if it's not the user who is deleting the project
+          if (assignee._id.toString() !== req.dbUser._id.toString()) {
+            uniqueAssigneeIds.add(assignee._id.toString());
+          }
+        }
+      }
+
+      // Create one notification per unique assignee
+      const notificationPromises = Array.from(uniqueAssigneeIds).map(
+        (assigneeId) => {
+          const notification = new Notification({
+            userId: assigneeId,
+            type: "project_deleted",
+            title: "Project Deleted",
+            message: `Project "${currentProject.name}" with the key "${currentProject.key}" was deleted by ${req.dbUser.name}.`,
+            payload: {
+              projectId: currentProject._id,
+              workspaceId: currentProject.workspaceId,
+              actorId: req.dbUser._id,
+            },
+          });
+          return notification.save();
+        }
+      );
+
+      await Promise.all(notificationPromises);
 
       // Delete all tasks associated with this project
       await Task.deleteMany({ projectId });
