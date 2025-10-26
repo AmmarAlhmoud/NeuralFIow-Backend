@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const Task = require("../models/Task");
 const Notification = require("../models/Notification");
+const Workspace = require("../models/Workspace");
+const Project = require("../models/Project");
 const { requireWorkspaceRole } = require("../middleware/rbac");
 const { validate, z, commonSchemas } = require("../middleware/validate");
 const { aiQueue } = require("../queues/ai-queue");
@@ -19,6 +21,12 @@ const createTaskSchema = z.object({
     progress: z.number().positive().optional(),
     tags: z.array(z.string()).optional(),
     assignees: z.array(commonSchemas.mongoId).optional(),
+  }),
+});
+
+const getTasksBySearchSchema = z.object({
+  query: z.object({
+    search: z.string().optional(),
   }),
 });
 
@@ -88,7 +96,7 @@ router.post(
 
 router.get(
   "/by-project/:projectId",
-  requireWorkspaceRole("member"),
+  requireWorkspaceRole("viewer"),
   async (req, res) => {
     try {
       const { projectId } = req.params;
@@ -113,7 +121,7 @@ router.get(
 
 router.get(
   "/by-project/:projectId/task/:taskId",
-  requireWorkspaceRole("member"),
+  requireWorkspaceRole("viewer"),
   async (req, res) => {
     try {
       const { taskId } = req.params;
@@ -135,6 +143,116 @@ router.get(
     }
   }
 );
+
+router.get("/", validate(getTasksBySearchSchema), async (req, res) => {
+  try {
+    const { _id } = req.dbUser;
+    const search = req.validated.query.search;
+
+    // Step 1: Find all workspaces where user is a member
+    const workspaces = await Workspace.find({
+      "members.uid": _id,
+    }).select("_id name");
+
+    // Check if user is a member of any workspace
+    if (!workspaces || workspaces.length === 0) {
+      return res.json({
+        success: true,
+        data: [],
+        message: "You are not a member of any workspace",
+      });
+    }
+
+    // Extract workspace IDs
+    const workspaceIds = workspaces.map((workspace) => workspace._id);
+
+    // Step 2: Find projects
+    const projects = await Project.find({
+      workspaceId: { $in: workspaceIds },
+    }).select("_id");
+
+    // Check if any projects exist in user's workspaces
+    if (!projects || projects.length === 0) {
+      return res.json({
+        success: true,
+        data: [],
+        message: "No projects found in your workspaces",
+      });
+    }
+
+    const projectsIds = projects.map((project) => project._id);
+
+    // Step 3: Build task query with aggregation
+    let matchStage = {};
+
+    // Add title search if provided
+    if (typeof search === "string" && search.trim() !== "") {
+      matchStage = {
+        projectId: { $in: projectsIds },
+        title: { $regex: search, $options: "i" },
+      };
+    }
+
+    // Step 4: Aggregation to get workspaceId from project
+    const tasks = await Task.aggregate([
+      { $match: matchStage },
+
+      // Join with projects to get workspaceId
+      {
+        $lookup: {
+          from: "projects",
+          localField: "projectId",
+          foreignField: "_id",
+          as: "project",
+        },
+      },
+      { $unwind: "$project" },
+
+      // Add workspaceId to task
+      {
+        $addFields: {
+          workspaceId: "$project.workspaceId",
+          projectName: "$project.name",
+        },
+      },
+      ...(search
+        ? [
+            {
+              $project: {
+                _id: 1,
+                title: 1,
+                priority: 1,
+                dueDate: 1,
+                status: 1,
+                projectId: 1,
+                workspaceId: 1,
+                projectName: 1,
+              },
+            },
+          ]
+        : [
+            {
+              $project: {
+                project: 0,
+              },
+            },
+          ]),
+
+      { $sort: { order: 1, createdAt: -1 } },
+    ]);
+
+    res.json({
+      success: true,
+      data: tasks,
+    });
+  } catch (error) {
+    console.error("📊 List tasks error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch tasks",
+    });
+  }
+});
 
 const updateTaskSchema = z.object({
   params: z.object({

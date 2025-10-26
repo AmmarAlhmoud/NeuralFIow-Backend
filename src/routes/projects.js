@@ -4,6 +4,7 @@ const router = express.Router();
 const Project = require("../models/Project");
 const Task = require("../models/Task");
 const Notification = require("../models/Notification");
+const Workspace = require("../models/Workspace");
 const { requireWorkspaceRole } = require("../middleware/rbac");
 const { validate, z, commonSchemas } = require("../middleware/validate");
 
@@ -75,6 +76,93 @@ const deletedProjectSchema = z.object({
   query: z.object({
     workspaceId: commonSchemas.mongoId,
   }),
+});
+
+const getProjectsBySearchSchema = z.object({
+  query: z.object({
+    search: z.string().optional(),
+  }),
+});
+
+router.get(
+  "/by-workspace/:wid",
+  requireWorkspaceRole("viewer"),
+  async (req, res) => {
+    try {
+      const { wid } = req.params;
+
+      const projects = await Project.find({ workspaceId: wid })
+        .populate("createdBy", "name email avatarUrl")
+        .sort({ createdAt: -1 });
+
+      res.json({
+        success: true,
+        data: projects,
+      });
+    } catch (error) {
+      console.error("📊 List projects error:", error);
+      res.status(500).json({
+        message: "Failed to fetch projects",
+      });
+    }
+  }
+);
+
+router.get("/", validate(getProjectsBySearchSchema), async (req, res) => {
+  try {
+    const { _id } = req.dbUser;
+    const search = req.validated.query.search;
+
+    // Step 1: Find all workspaces where user is a member
+    const workspaces = await Workspace.find({
+      "members.uid": _id,
+    }).select("_id name");
+
+    // Check if user is a member of any workspace
+    if (!workspaces || workspaces.length === 0) {
+      return res.json({
+        success: true,
+        data: [],
+        message: "You are not a member of any workspace",
+      });
+    }
+
+    // Extract workspace IDs
+    const workspaceIds = workspaces.map((workspace) => workspace._id);
+
+    // Step 2: Build query object for project search
+    let queryObj = {};
+
+    // Add name search if provided
+    if (typeof search === "string" && search.trim() !== "") {
+      queryObj = {
+        workspaceId: { $in: workspaceIds },
+        name: { $regex: search, $options: "i" },
+      };
+    }
+
+    // Step 3: Select fields based on search
+    const selectFields = search ? "_id name status workspaceId" : "";
+
+    // Step 4: Find projects matching the criteria
+    const projects = await Project.find(queryObj)
+      .select(selectFields)
+      .populate("createdBy", "_id name email avatarUrl")
+      .populate("workspaceId", "_id name")
+      .populate("taskCount")
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      data: projects,
+    });
+  } catch (error) {
+    console.error("📊 List projects error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch projects",
+    });
+  }
 });
 
 router.post(
@@ -321,30 +409,6 @@ router.delete(
 
       res.status(500).json({
         message: "Failed to delete project",
-      });
-    }
-  }
-);
-
-router.get(
-  "/by-workspace/:wid",
-  requireWorkspaceRole("member"),
-  async (req, res) => {
-    try {
-      const { wid } = req.params;
-
-      const projects = await Project.find({ workspaceId: wid })
-        .populate("createdBy", "name email avatarUrl")
-        .sort({ createdAt: -1 });
-
-      res.json({
-        success: true,
-        data: projects,
-      });
-    } catch (error) {
-      console.error("📊 List projects error:", error);
-      res.status(500).json({
-        message: "Failed to fetch projects",
       });
     }
   }

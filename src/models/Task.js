@@ -69,4 +69,11 @@ const TaskSchema = new Schema(
   { timestamps: true }
 );
 
+TaskSchema.virtual("workspaceId", {
+  ref: "Project",
+  localField: "_id",
+  foreignField: "workspaceId",
+  count: true,
+});
+
 module.exports = model("Task", TaskSchema);

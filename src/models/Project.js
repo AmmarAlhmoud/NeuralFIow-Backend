@@ -29,8 +29,20 @@ const ProjectSchema = new Schema(
       required: true,
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  }
 );
 
+ProjectSchema.virtual("taskCount", {
+  ref: "Task",
+  localField: "_id",
+  foreignField: "projectId",
+  count: true,
+});
+
 ProjectSchema.index({ workspaceId: 1, key: 1 }, { unique: true });
+
 module.exports = model("Project", ProjectSchema);

@@ -33,6 +33,12 @@ const deleteWorkspaceSchema = z.object({
   }),
 });
 
+const getWorkspacesSchema = z.object({
+  query: z.object({
+    search: z.string().optional(),
+  }),
+});
+
 router.post("/", validate(createWorkspaceSchema), async (req, res) => {
   try {
     const { _id } = req.dbUser;
@@ -64,13 +70,37 @@ router.post("/", validate(createWorkspaceSchema), async (req, res) => {
   }
 });
 
-router.get("/", async (req, res) => {
+router.get("/", validate(getWorkspacesSchema), async (req, res) => {
   try {
     const { _id } = req.dbUser;
+    const search = req.validated.query.search;
 
-    const workspaces = await Workspace.find({ "members.uid": _id })
-      .populate("ownerId", "name email avatarURL")
-      .sort({ createdAt: -1 });
+    let queryObj = {
+      "members.uid": _id,
+    };
+
+    // Build base query
+    let query = Workspace.find(queryObj);
+
+    // If search exists
+    if (typeof search === "string" && search.trim() !== "") {
+      queryObj = {
+        ...queryObj,
+        name: { $regex: search, $options: "i" },
+      };
+
+      // Select only specific fields for search results
+      query = Workspace.find(queryObj)
+        .select("_id name members.uid createdAt")
+        .populate("ownerId", "name email avatarURL");
+    } else {
+      query = Workspace.find(queryObj).populate(
+        "ownerId",
+        "name email avatarURL"
+      );
+    }
+
+    const workspaces = await query.sort({ createdAt: -1 });
 
     res.status(200).json({
       success: true,
