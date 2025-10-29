@@ -28,6 +28,7 @@ const firebaseAuthMiddleware = async (req, res, next) => {
         email: userData.email,
         name: userData.displayName,
         avatarURL: userData.photoURL,
+        provider: userData.providerData[0].providerId,
       });
     }
 

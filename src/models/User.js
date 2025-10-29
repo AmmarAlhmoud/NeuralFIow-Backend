@@ -22,6 +22,7 @@ const UserSchema = new Schema(
       type: Boolean,
       default: false,
     },
+    provider: { type: String, enum: ["password", "google.com", "github.com"] },
   },
   { timestamps: true }
 );

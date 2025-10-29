@@ -86,6 +86,39 @@ router.patch(
   }
 );
 
+router.post("/check-provider", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
+    }
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.json({
+        success: true,
+        provider: "password",
+      });
+    }
+
+    return res.json({
+      success: true,
+      provider: user.provider || "password",
+    });
+  } catch (error) {
+    console.error("Check provider error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to check provider",
+    });
+  }
+});
+
 router.post("/logout", attatchAuthUser, async (req, res) => {
   try {
     req.dbUser.isOnline = false;
