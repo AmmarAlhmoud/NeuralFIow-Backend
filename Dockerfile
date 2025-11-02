@@ -1,20 +1,16 @@
 FROM node:20-alpine AS base
 
-# Production stage
 FROM base AS production
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
 
-# Install production dependencies only
-RUN npm ci --omit=dev && npm cache clean --force
+# Install ALL dependencies (including PM2)
+RUN npm ci && npm cache clean --force
 
-# Copy application code
 COPY . .
 
-# Expose port
 EXPOSE 8080
 
-# Start application
-CMD ["node", "src/server.js src/workers/ai-worker.js"]
+# Start with PM2
+CMD ["npx", "pm2-runtime", "start", "ecosystem.config.js"]
