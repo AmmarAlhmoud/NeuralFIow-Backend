@@ -1,23 +1,26 @@
 services:
   mongo:
     image: mongo:6
-    container_name: ai_task_mongo
-    restart: unless-stopped
     ports:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
-    environment:
-      MONGO_INITDB_DATABASE: ai_task_platform
   redis:
     image: redis:7-alpine
-    container_name: ai_task_redis
-    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+  backend:
+    build: .
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mongo
+      - redis
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/neuralflow
+      REDIS_URL: redis://redis:6379
 volumes:
   mongo_data:
   redis_data:

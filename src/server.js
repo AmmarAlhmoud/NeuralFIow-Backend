@@ -5,6 +5,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const https = require("https");
+const http = require("http");
 const cookieParser = require("cookie-parser");
 const { Server } = require("socket.io");
 const { connectDB } = require("./lib/db");
@@ -17,6 +18,24 @@ const {
 } = require("./workers/socketManager");
 
 const app = express();
+
+const requiredEnvVars = [
+  "MONGO_URI",
+  "REDIS_URL",
+  "FIREBASE_PROJECT_ID",
+  "FIREBASE_CLIENT_EMAIL",
+  "FIREBASE_PRIVATE_KEY",
+  "GEMINI_API_KEY",
+];
+
+requiredEnvVars.forEach((varName) => {
+  if (!process.env[varName]) {
+    console.error(`Missing required environment variable: ${varName}`);
+    process.exit(1);
+  }
+});
+
+console.log("✅ All required environment variables are set");
 
 // Middleware setup
 app.use(helmet());
@@ -40,10 +59,24 @@ app.get("/health", (_req, res) => {
   });
 });
 
-// HTTPS server with certificates
-const key = fs.readFileSync("localhost-key.pem");
-const cert = fs.readFileSync("localhost.pem");
-const server = https.createServer({ key, cert }, app);
+// Create server based on environment
+const isDevelopment = process.env.NODE_ENV !== "production";
+let server;
+
+if (isDevelopment) {
+  // HTTPS in development
+  try {
+    const key = fs.readFileSync("localhost-key.pem");
+    const cert = fs.readFileSync("localhost.pem");
+    server = https.createServer({ key, cert }, app);
+  } catch (error) {
+    console.warn("⚠️  HTTPS certificates not found, falling back to HTTP");
+    server = http.createServer(app);
+  }
+} else {
+  // HTTP in production
+  server = http.createServer(app);
+}
 
 // Socket.IO server instance
 const io = new Server(server, {
@@ -94,7 +127,10 @@ io.use(decodeSocketAuth);
 
     // Start server listening
     server.listen(port, () => {
-      console.log(`🚀 AI Task Platform API listening on port ${port}`);
+      const protocol = isDevelopment ? "https" : "http";
+      console.log(
+        `🚀 AI Task Platform API listening on ${protocol}://localhost:${port}`
+      );
       console.log(`📱 Socket.IO enabled for real-time updates`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
     });
