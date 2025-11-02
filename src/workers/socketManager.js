@@ -5,6 +5,17 @@ const userSockets = new Map();
 
 const redisClient = createClient({
   url: process.env.REDIS_URL || "redis://localhost:6379",
+  socket: {
+    tls: true,
+    rejectUnauthorized: false,
+    reconnectStrategy: (retries) => {
+      if (retries > 3) {
+        console.error("❌ Redis: Max reconnection attempts reached");
+        return new Error("Max reconnection attempts reached");
+      }
+      return Math.min(retries * 100, 3000);
+    },
+  },
 });
 
 // Handle Redis connection errors
