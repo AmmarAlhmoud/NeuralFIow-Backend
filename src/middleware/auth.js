@@ -40,7 +40,7 @@ const firebaseAuthMiddleware = async (req, res, next) => {
         maxAge: 60 * 60 * 1000,
         httpOnly: true,
         secure: true,
-        sameSite: process.env.NODE_ENV === "production" ? "lax" : "none",
+        sameSite: "none",
       };
       res.cookie("token", token, cookieOptions);
     }
