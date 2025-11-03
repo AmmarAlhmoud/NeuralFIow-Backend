@@ -3,11 +3,16 @@ const { createClient } = require("redis");
 let ioInstance;
 const userSockets = new Map();
 
+const isProduction = process.env.NODE_ENV === "production";
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+
 const redisClient = createClient({
-  url: process.env.REDIS_URL || "redis://localhost:6379",
+  url: redisUrl,
   socket: {
-    tls: true,
-    rejectUnauthorized: false,
+    ...(isProduction && {
+      tls: true,
+      rejectUnauthorized: false,
+    }),
     reconnectStrategy: (retries) => {
       if (retries > 3) {
         console.error("❌ Redis: Max reconnection attempts reached");
