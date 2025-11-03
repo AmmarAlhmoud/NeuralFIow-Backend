@@ -10,7 +10,7 @@ const {
 const { validate, commonSchemas } = require("../middleware/validate");
 
 router.post("/", firebaseAuthMiddleware, (req, res) => {
-  res.status(200).json({ message: "Authinticated" });
+  res.status(200).json({ message: "Authenticated" });
 });
 
 router.get("/me", firebaseAuthMiddleware, async (req, res) => {
@@ -127,7 +127,7 @@ router.post("/logout", attatchAuthUser, async (req, res) => {
     res.clearCookie("token", {
       httpOnly: true,
       secure: true,
-      sameSite: process.env.NODE_ENV === "production" ? "Lax" : "None",
+      sameSite: "none",
     });
     res.status(200).json({ message: "Logged out" });
   } catch (err) {
