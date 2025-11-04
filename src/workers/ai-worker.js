@@ -20,12 +20,24 @@ const {
     console.log("🤖 AI Worker starting...");
 
     // Connect to main server's Socket.IO as worker
-    const socket = io(process.env.BACKEND_URL || "https://localhost:8080", {
-      auth: { type: "worker", secret: process.env.WORKER_SECRET },
+    const socket = io(process.env.BACKEND_URL || "http://localhost:8080", {
+      auth: {
+        type: "worker",
+        secret: process.env.WORKER_SECRET,
+      },
+      transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 10,
-      rejectUnauthorized: false,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: Infinity,
+      timeout: 45000,
+      pingTimeout: 60000,
+      pingInterval: 25000,
+      autoConnect: true,
+      forceNew: false,
+      rejectUnauthorized: process.env.NODE_ENV === "production" ? false : true,
+      secure: true,
+      withCredentials: false,
     });
 
     socket.on("connect", () => {
