@@ -3,33 +3,37 @@ const { createClient } = require("redis");
 let ioInstance;
 const userSockets = new Map();
 
-const isProduction = process.env.NODE_ENV === "production";
 const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 
+// Configure Redis client
 const redisClient = createClient({
   url: redisUrl,
   socket: {
-    ...(isProduction && {
-      tls: true,
-      rejectUnauthorized: false,
-    }),
+    tls: redisUrl.startsWith("rediss://"),
+    rejectUnauthorized: false,
+    keepAlive: redisUrl.startsWith("rediss://") ? 0 : 5000,
     reconnectStrategy: (retries) => {
-      if (retries > 3) {
+      console.warn(`🔁 Redis reconnect attempt ${retries}`);
+      if (retries > 10) {
         console.error("❌ Redis: Max reconnection attempts reached");
         return new Error("Max reconnection attempts reached");
       }
-      return Math.min(retries * 100, 3000);
+      return Math.min(retries * 500, 3000);
     },
   },
 });
 
-// Handle Redis connection errors
+// Handle Redis connection lifecycle
 redisClient.on("error", (err) => {
-  console.error("❌ Redis Client Error:", err);
+  console.error("❌ Redis Client Error:", err.message || err);
 });
 
 redisClient.on("connect", () => {
   console.log("✅ Redis connected successfully");
+});
+
+redisClient.on("end", () => {
+  console.warn("⚠️ Redis connection closed");
 });
 
 const userRoomsKey = (userId) => `userRooms:${userId}`;
@@ -39,6 +43,7 @@ const initializeSocketManager = async (io) => {
 
   try {
     await redisClient.connect();
+    console.log("🎯 Redis client ready");
   } catch (error) {
     console.error("❌ Failed to connect to Redis:", error);
     throw error;
@@ -49,16 +54,12 @@ const initializeSocketManager = async (io) => {
     if (socket.isWorker) {
       console.log(`🤖 AI Worker connected: ${socket.id}`);
 
-      // Handle AI results from worker
       socket.on("ai:result", (data) => {
         console.log(
           `🤖 Broadcasting AI ${data.type} result for task ${data.taskId}`
         );
 
-        // Broadcast to project room
         const projectId = data.projectId;
-        console.log("Project ID:", projectId);
-
         io.to(`project:${projectId}`).emit("ai:completed", {
           type: data.type,
           taskId: data.taskId,
@@ -76,13 +77,13 @@ const initializeSocketManager = async (io) => {
     // Regular user connection handling
     const userId = socket.user?.uid;
     if (!userId) {
-      console.log(`Socket connected without user id: ${socket.id}`);
+      console.log(`⚠️ Socket connected without user id: ${socket.id}`);
       return;
     }
 
     console.log(`👤 User connected: ${userId} (${socket.id})`);
 
-    // Track socket ID in-memory
+    // Track socket IDs in-memory
     if (!userSockets.has(userId)) {
       userSockets.set(userId, new Set());
     }
@@ -91,23 +92,23 @@ const initializeSocketManager = async (io) => {
     // Join user's personal room
     socket.join(`user:${userId}`);
 
-    // Auto-join stored rooms from Redis
+    // Restore previously joined rooms from Redis
     try {
       const rooms = await redisClient.sMembers(userRoomsKey(userId));
       rooms.forEach((roomName) => {
         socket.join(roomName);
         console.log(
-          `Socket ${socket.id} of user ${userId} auto-joined room ${roomName}`
+          `🔄 Socket ${socket.id} of user ${userId} auto-joined room ${roomName}`
         );
       });
     } catch (error) {
       console.error(`❌ Failed to load rooms for user ${userId}:`, error);
     }
 
-    // Subscribe user to a new room and persist in Redis
+    // Subscribe to new room
     socket.on("subscribe", async ({ type, id }) => {
+      const roomName = `${type}:${id}`;
       try {
-        const roomName = `${type}:${id}`;
         socket.join(roomName);
         console.log(`📡 User ${userId} subscribed to ${roomName}`);
         await redisClient.sAdd(userRoomsKey(userId), roomName);
@@ -116,10 +117,10 @@ const initializeSocketManager = async (io) => {
       }
     });
 
-    // Unsubscribe user from a room and remove from Redis
+    // Unsubscribe from room
     socket.on("unsubscribe", async ({ type, id }) => {
+      const roomName = `${type}:${id}`;
       try {
-        const roomName = `${type}:${id}`;
         socket.leave(roomName);
         console.log(`📡 User ${userId} unsubscribed from ${roomName}`);
         await redisClient.sRem(userRoomsKey(userId), roomName);
@@ -128,6 +129,7 @@ const initializeSocketManager = async (io) => {
       }
     });
 
+    // On disconnect
     socket.on("disconnect", () => {
       console.log(`👋 User disconnected: ${userId} (${socket.id})`);
       if (userSockets.has(userId)) {
@@ -138,7 +140,7 @@ const initializeSocketManager = async (io) => {
   });
 };
 
-// Join all sockets of a user to a room and persist subscription in Redis
+// Join all user sockets to a given room
 const joinUserSocketsToRoom = async (userId, roomName) => {
   const socketIds = userSockets.get(userId);
   if (socketIds && ioInstance) {
@@ -163,7 +165,7 @@ const joinUserSocketsToRoom = async (userId, roomName) => {
   }
 };
 
-// Emit to specific room (useful for broadcasting AI results manually)
+// Emit to a specific room
 const emitToRoom = (roomName, event, data) => {
   if (ioInstance) {
     ioInstance.to(roomName).emit(event, data);
@@ -171,7 +173,7 @@ const emitToRoom = (roomName, event, data) => {
   }
 };
 
-// Get IO instance for use in other modules
+// Get IO instance
 const getIO = () => {
   if (!ioInstance) {
     throw new Error(
