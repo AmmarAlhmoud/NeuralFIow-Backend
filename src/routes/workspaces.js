@@ -421,7 +421,7 @@ router.get(
       // 7. COMPLETION RATE
 
       const completionStats = await Task.aggregate([
-        { $match: { projectId: { $in: projectIds }, ai: { $exists: true } } },
+        { $match: { projectId: { $in: projectIds } } },
         {
           $group: {
             _id: null,
